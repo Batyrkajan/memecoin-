@@ -7,6 +7,9 @@ from cryptography.fernet import Fernet
 from solana.rpc.api import Client
 from solana.keypair import Keypair
 from solana.transaction import Transaction
+import requests
+from base58 import b58decode
+
 
 # Step 1: Set up everything
 # ---------------------------------------------
@@ -23,8 +26,9 @@ ENCRYPTED_PRIVATE_KEY = os.getenv("ENCRYPTED_PRIVATE_KEY")
 PRIVATE_KEY_HEX = os.getenv("SOLANA_PRIVATE_KEY")
 
 # Convert private key from hex to keypair
-private_key_bytes = bytes.fromhex(PRIVATE_KEY_HEX)
-wallet = Keypair.from_secret_key(private_key_bytes)
+private_key_bytes = b58decode(os.getenv(PRIVATE_KEY_HEX))  # Decode Base58
+wallet = Keypair.from_bytes(private_key_bytes)  # Correct method for solders Keypair
+
 
 # Connect to Solana using RPC Provider
 SOLANA_RPC_URL = os.getenv("SOLANA_RPC_URL")  # Store this in .env
@@ -87,23 +91,65 @@ logging.info(f"Connected wallet: {wallet_address}")
 # ---------------------------------------------------
 
 def get_trending_coins():
-    url = "https://api.dextools.io/trending-pairs"
-    headers = {"Authorization": "Bearer YOUR_API_KEY"}
-    response = requests.get(url, headers=headers)
+    url = "https://api.dexscreener.com/latest/dex/pairs"
+    response = requests.get(url)
     
     if response.status_code == 200:
         data = response.json()
-        trending_coins = data['data']
-        return trending_coins
+        trending_coins = data["pairs"][:5]  # Get top 5 pairs
+        for pair in trending_coins:
+            print(f"Token: {pair['baseToken']['symbol']} - Price: ${pair['priceUsd']}")
     else:
-        print("Error fetching trending coins")
-        return []
+        print("❌ Error fetching trending pairs:", response.json())
+
+def get_best_pair(token_address):
+    url = f"https://api.dexscreener.com/token-pairs/v1/solana/{token_address}"
+    response = requests.get(url)
+
+    if response.status_code == 200:
+        data = response.json()
+        best_pair = max(data, key=lambda p: p['liquidity']['usd'])  # Select highest liquidity
+        print(f"✅ Best Trading Pair: {best_pair['pairAddress']} - Liquidity: ${best_pair['liquidity']['usd']}")
+        return best_pair
+    else:
+        print("❌ Error fetching pair:", response.json())
+        return None
+
+# ---------------------------------------------------
+# SWAP TOKENS TODO
+# ---------------------------------------------------
+
+def swap_token_jupiter(input_token, output_token, amount):
+    url = "https://quote-api.jup.ag/v4/quote"
+    params = {
+        "inputMint": input_token,
+        "outputMint": output_token,
+        "amount": int(amount * (10**9)),  # Convert to base units
+        "slippageBps": 50  # 0.5% slippage
+    }
+    
+    response = requests.get(url, params=params)
+
+    if response.status_code == 200:
+        swap_data = response.json()
+        print(f"✅ Swap Quote: {swap_data['outAmount']} {output_token}")
+        return swap_data
+    else:
+        print("❌ Error fetching swap:", response.json())
+        return None
+
+# Example Swap: Buy 0.1 SOL worth of a meme coin
+swap_token_jupiter("So11111111111111111111111111111111111111112", "TOKEN_MINT_ADDRESS", 0.1)
+
+
 
 trending_coins = get_trending_coins()
 for coin in trending_coins:
     print(f"Token: {coin['symbol']} - Price: {coin['price']}")
 
-    
+# ---------------------------------------------------
+# Step 3: Monitor for whales
+
 ETHERSCAN_API = "YOUR_ETHERSCAN_API"
 
 def track_whales(token_address):
