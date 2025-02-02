@@ -1,0 +1,9 @@
+/.env
+/.venv
+/encryptedkey.txt
+/encryption.py
+/test1_setup.log
+/test1_setup.py
+/test2_trending_coins.py
+/test3_solona_connections.py
+/venv
